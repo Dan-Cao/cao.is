@@ -7,9 +7,8 @@
 <meta name="description" content="Which Canning Town DLR platform to use for West Silvertown, and when the next train is due.">
 <meta name="theme-color" content="#00a4a7">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root {
     --bg: #f4f6f6;
@@ -225,8 +224,8 @@
   setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
   setInterval(render, 1000);
 
-  // An earlier version installed an offline service worker, which led Firefox to
-  // drop the home-screen icon. Remove it from phones that still have it.
+  // An earlier version installed an offline service worker. Remove it from
+  // phones that still have it.
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations()
       .then((regs) => regs.forEach((r) => r.unregister()))
