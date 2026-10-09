@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rise Home</title>
+<meta name="description" content="From Rise Climbing to West Silvertown: is the 330 bus or the DLR quicker right now?">
+<meta name="theme-color" content="#00a4a7">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #f4f6f6;
+    --card: #ffffff;
+    --text: #12201f;
+    --muted: #5d6b6a;
+    --dlr: #00a4a7;   /* DLR teal */
+    --bus: #dc241f;   /* London bus red */
+    --on-colour: #ffffff;
+    --warn: #b34700;
+    --border: #dde3e3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1414;
+      --card: #172020;
+      --text: #e8efee;
+      --muted: #93a3a2;
+      --dlr: #00b5b8;
+      --bus: #ff5a50;
+      --on-colour: #10100f;
+      --warn: #ff9a5a;
+      --border: #263231;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 480px;
+    margin: 0 auto;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; color: var(--muted); }
+  #status { font-size: 13px; color: var(--muted); text-align: right; }
+  #status.error { color: var(--warn); }
+
+  .hero {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  .hero.bus { background: var(--bus); border-color: var(--bus); color: var(--on-colour); }
+  .hero.dlr { background: var(--dlr); border-color: var(--dlr); color: var(--on-colour); }
+  .hero .label { font-size: 15px; opacity: .85; }
+  .hero .pick { font-size: 56px; font-weight: 800; line-height: 1.1; margin: 4px 0; }
+  .hero .leave { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .hero .why { font-size: 14px; opacity: .9; margin-top: 6px; }
+
+  .options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .opt {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  }
+  .opt .tag {
+    align-self: flex-start; font-weight: 800; font-size: 14px; color: var(--on-colour);
+    border-radius: 8px; padding: 2px 8px;
+  }
+  .opt.bus .tag { background: var(--bus); }
+  .opt.dlr .tag { background: var(--dlr); }
+  .opt .big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .opt .row { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .opt.none .big { font-size: 16px; color: var(--muted); }
+
+  .tip { font-size: 13px; color: var(--muted); margin: 0; }
+  button {
+    font: inherit; font-weight: 600; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 12px; width: 100%;
+  }
+  footer { margin-top: auto; font-size: 12px; color: var(--muted); text-align: center; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Rise → West Silvertown</h1>
+    <div id="status">Loading…</div>
+  </header>
+
+  <section id="hero" class="hero" aria-live="polite">
+    <div class="label">Checking bus and DLR…</div>
+  </section>
+
+  <div class="options">
+    <div id="bus" class="opt bus"><span class="tag">330</span></div>
+    <div id="dlr" class="opt dlr"><span class="tag">DLR</span></div>
+  </div>
+
+  <button id="refresh" type="button">Refresh</button>
+
+  <p class="tip" id="tip"></p>
+
+  <footer>Live data from <a href="https://api.tfl.gov.uk/">TfL</a>. Powered by TfL Open Data.</footer>
+
+<script>
+(() => {
+  const TFL = 'https://api.tfl.gov.uk/StopPoint';
+  const STOPS = {
+    busBoard: '490007165S',  // Brunel Street, towards Pontoon Dock
+    busAlight: '490013434E', // West Silvertown Station, towards Pontoon Dock
+    dlrBoard: '940GZZDLCGT', // Canning Town DLR
+    dlrAlight: '940GZZDLWSV', // West Silvertown DLR
+  };
+  const VIA_WEST_SILVERTOWN = /woolwich|king george|city airport|pontoon|west silvertown/i;
+  const REFRESH_MS = 20000;
+
+  // Walking minutes from Rise, overridable with ?bus=N&dlr=N.
+  const params = new URLSearchParams(location.search);
+  const minutes = (key, fallback) => {
+    const n = Number(params.get(key));
+    return params.has(key) && Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+  const WALK = { bus: minutes('bus', 3) * 60000, dlr: minutes('dlr', 7) * 60000 };
+  const RIDE_FALLBACK = { bus: 4 * 60000, dlr: 3 * 60000 };
+
+  const $ = (id) => document.getElementById(id);
+  let options = null; // { bus: [...], dlr: [...] }, each {depart, arrive, platform?}
+  let fetchedAt = null;
+  let lastError = null;
+  let inflight = false;
+
+  const getArrivals = async (id) => {
+    const res = await fetch(`${TFL}/${id}/Arrivals`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`TfL returned ${res.status}`);
+    return res.json();
+  };
+
+  // Bus: follow each 330 by registration from Brunel Street to West Silvertown.
+  function busOptions(board, alight) {
+    const arriveByVehicle = new Map();
+    for (const a of alight) {
+      if (a.lineName === '330' && a.vehicleId) arriveByVehicle.set(a.vehicleId, new Date(a.expectedArrival));
+    }
+    return board
+      .filter((a) => a.lineName === '330')
+      .map((a) => {
+        const depart = new Date(a.expectedArrival);
+        const arrive = arriveByVehicle.get(a.vehicleId);
+        return { depart, arrive: arrive > depart ? arrive : new Date(+depart + RIDE_FALLBACK.bus) };
+      });
+  }
+
+  // DLR: trains carry no ID, so pair each Canning Town departure with the
+  // first Woolwich-branch arrival at West Silvertown at least a minute later.
+  function dlrOptions(board, alight) {
+    const wsv = alight
+      .filter((a) => VIA_WEST_SILVERTOWN.test(a.destinationName || '') && a.direction === 'outbound')
+      .map((a) => new Date(a.expectedArrival))
+      .sort((a, b) => a - b);
+    return board
+      .filter((a) => VIA_WEST_SILVERTOWN.test(a.destinationName || '') && a.direction === 'outbound')
+      .map((a) => {
+        const depart = new Date(a.expectedArrival);
+        const arrive = wsv.find((t) => t - depart >= 60000 && t - depart <= 6 * 60000);
+        return {
+          depart,
+          arrive: arrive || new Date(+depart + RIDE_FALLBACK.dlr),
+          platform: (/(\d+)/.exec(a.platformName || '') || [])[1] || '?',
+        };
+      });
+  }
+
+  async function load() {
+    if (inflight) return;
+    inflight = true;
+    $('status').textContent = 'Updating…';
+    try {
+      const [bb, ba, db, da] = await Promise.all(
+        [STOPS.busBoard, STOPS.busAlight, STOPS.dlrBoard, STOPS.dlrAlight].map(getArrivals));
+      const byDepart = (a, b) => a.depart - b.depart;
+      options = { bus: busOptions(bb, ba).sort(byDepart), dlr: dlrOptions(db, da).sort(byDepart) };
+      fetchedAt = new Date();
+      lastError = null;
+    } catch (e) {
+      lastError = e;
+    } finally {
+      inflight = false;
+      render();
+    }
+  }
+
+  const clock = (d) => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const mins = (ms) => Math.max(0, Math.round(ms / 60000));
+  const leaveText = (ms) => (ms < 60000 ? 'Leave now' : `Leave in ${mins(ms)} min`);
+
+  // The first departure she can still walk to in time, or null.
+  function best(mode, now) {
+    return (options?.[mode] || []).find((o) => o.depart - now >= WALK[mode]) || null;
+  }
+
+  function renderOption(mode, o, now) {
+    const el = $(mode);
+    const tag = `<span class="tag">${mode === 'bus' ? '330' : 'DLR'}</span>`;
+    if (!o) {
+      el.classList.add('none');
+      el.innerHTML = `${tag}<span class="big">Nothing catchable listed</span>`;
+      return;
+    }
+    el.classList.remove('none');
+    el.innerHTML = `${tag}
+      <span class="big">Arrive ${clock(o.arrive)}</span>
+      <span class="row">${leaveText(o.depart - now - WALK[mode])}</span>
+      <span class="row">${mode === 'bus' ? 'Brunel St' : `Platform ${o.platform}`} at ${clock(o.depart)}</span>`;
+  }
+
+  function render() {
+    const now = Date.now();
+    const bus = best('bus', now);
+    const dlr = best('dlr', now);
+    renderOption('bus', bus, now);
+    renderOption('dlr', dlr, now);
+
+    const hero = $('hero');
+    if (options) {
+      let pick = null;
+      if (bus && dlr) pick = bus.arrive < dlr.arrive ? 'bus' : 'dlr';
+      else pick = bus ? 'bus' : dlr ? 'dlr' : null;
+
+      if (!pick) {
+        hero.className = 'hero';
+        hero.innerHTML = `<div class="label">No catchable bus or DLR listed right now</div>`;
+      } else {
+        const o = pick === 'bus' ? bus : dlr;
+        const other = pick === 'bus' ? dlr : bus;
+        // Compare whole clock minutes so the gap matches the times shown.
+        const gap = other ? Math.floor(other.arrive / 60000) - Math.floor(o.arrive / 60000) : null;
+        const why = !other
+          ? `Only option listed · arrive ${clock(o.arrive)}`
+          : gap === 0
+            ? `About the same as the ${pick === 'bus' ? 'DLR' : '330'} · arrive ${clock(o.arrive)}`
+            : `Arrive ${clock(o.arrive)} · ${gap} min sooner than the ${pick === 'bus' ? 'DLR' : '330'}`;
+        hero.className = `hero ${pick}`;
+        hero.innerHTML = `
+          <div class="label">Get the</div>
+          <div class="pick">${pick === 'bus' ? '330 bus' : `DLR · P${o.platform}`}</div>
+          <div class="leave">${leaveText(o.depart - now - WALK[pick])}</div>
+          <div class="why">${why}</div>`;
+      }
+    }
+
+    const status = $('status');
+    if (lastError) {
+      status.classList.add('error');
+      status.textContent = fetchedAt ? `Offline · data ${ago(fetchedAt)}` : 'Couldn’t reach TfL';
+    } else if (fetchedAt && !inflight) {
+      status.classList.remove('error');
+      status.textContent = `Updated ${ago(fetchedAt)}`;
+    }
+
+    $('tip').textContent =
+      `Allows ${WALK.bus / 60000} min to walk to the Brunel Street bus stop and ${WALK.dlr / 60000} min ` +
+      `to the Canning Town DLR platform. Change with ?bus=N&dlr=N in the address.`;
+  }
+
+  function ago(d) {
+    const s = Math.round((Date.now() - d) / 1000);
+    return s < 5 ? 'just now' : s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
+  }
+
+  $('refresh').addEventListener('click', load);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') load();
+  });
+  setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
+  setInterval(render, 1000);
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  load();
+})();
+</script>
+</body>
+</html>
