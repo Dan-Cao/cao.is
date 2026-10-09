@@ -214,7 +214,7 @@
     const tag = `<span class="tag">${mode === 'bus' ? '330' : 'DLR'}</span>`;
     if (!o) {
       el.classList.add('none');
-      el.innerHTML = `${tag}<span class="big">Nothing catchable listed</span>`;
+      el.innerHTML = `${tag}<span class="big">${mode === 'bus' ? 'Bus' : 'DLR'} 摸鱼中</span>`;
       return;
     }
     el.classList.remove('none');
