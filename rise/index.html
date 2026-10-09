@@ -93,6 +93,15 @@
     font: inherit; font-weight: 600; color: var(--text); background: var(--card);
     border: 1px solid var(--border); border-radius: 12px; padding: 12px; width: 100%;
   }
+  .settings summary {
+    list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted);
+    padding: 4px 0; display: flex; align-items: center; gap: 6px;
+  }
+  .settings summary::-webkit-details-marker { display: none; }
+  .settings summary::after { content: '▸'; }
+  .settings[open] summary::after { content: '▾'; }
+  .settings[open] summary { margin-bottom: 8px; }
+  .settings .tip { margin-top: 8px; }
   footer { margin-top: auto; font-size: 12px; color: var(--muted); text-align: center; }
   footer a { color: inherit; }
 </style>
@@ -114,20 +123,23 @@
 
   <button id="refresh" type="button">Refresh</button>
 
-  <div class="walk">
-    <div class="wr">
-      <span class="wl">Walk to bus stop</span>
-      <button type="button" data-walk="bus" data-step="-1" aria-label="Less walking time to the bus">−</button>
-      <span class="wv" id="walk-bus"></span>
-      <button type="button" data-walk="bus" data-step="1" aria-label="More walking time to the bus">+</button>
+  <details class="settings">
+    <summary>⚙ Settings</summary>
+    <div class="walk">
+      <div class="wr">
+        <span class="wl">Walk to bus stop</span>
+        <button type="button" data-walk="bus" data-step="-1" aria-label="Less walking time to the bus">−</button>
+        <span class="wv" id="walk-bus"></span>
+        <button type="button" data-walk="bus" data-step="1" aria-label="More walking time to the bus">+</button>
+      </div>
+      <div class="wr">
+        <span class="wl">Walk to DLR</span>
+        <button type="button" data-walk="dlr" data-step="-1" aria-label="Less walking time to the DLR">−</button>
+        <span class="wv" id="walk-dlr"></span>
+        <button type="button" data-walk="dlr" data-step="1" aria-label="More walking time to the DLR">+</button>
+      </div>
     </div>
-    <div class="wr">
-      <span class="wl">Walk to DLR</span>
-      <button type="button" data-walk="dlr" data-step="-1" aria-label="Less walking time to the DLR">−</button>
-      <span class="wv" id="walk-dlr"></span>
-      <button type="button" data-walk="dlr" data-step="1" aria-label="More walking time to the DLR">+</button>
-    </div>
-  </div>
+  </details>
 
   <footer>Live data from <a href="https://api.tfl.gov.uk/">TfL</a>. Powered by TfL Open Data.</footer>
 
