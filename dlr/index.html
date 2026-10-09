@@ -189,7 +189,7 @@
     }
 
     const list = $('list');
-    const rest = upcoming.filter((t) => t !== catchable).slice(0, 4);
+    const rest = upcoming.filter((t) => t !== catchable);
     list.hidden = rest.length === 0;
     list.innerHTML = rest.map((t) => `
       <li class="${t.secs < walkSecs ? 'missed' : ''}">
