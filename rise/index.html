@@ -83,11 +83,25 @@
   .opt .row { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .opt.none .big { font-size: 16px; color: var(--muted); }
 
-  .tip { font-size: 13px; color: var(--muted); margin: 0; }
+  .walk { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .walk .wr { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; }
+  .walk .wr + .wr { border-top: 1px solid var(--border); }
+  .walk .wl { flex: 1; font-size: 14px; color: var(--muted); }
+  .walk .wv { min-width: 52px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .walk button { width: 40px; height: 40px; padding: 0; border-radius: 10px; font-size: 20px; line-height: 1; }
   button {
     font: inherit; font-weight: 600; color: var(--text); background: var(--card);
     border: 1px solid var(--border); border-radius: 12px; padding: 12px; width: 100%;
   }
+  .settings summary {
+    list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted);
+    padding: 4px 0; display: flex; align-items: center; gap: 6px;
+  }
+  .settings summary::-webkit-details-marker { display: none; }
+  .settings summary::after { content: '▸'; }
+  .settings[open] summary::after { content: '▾'; }
+  .settings[open] summary { margin-bottom: 8px; }
+  .settings .tip { margin-top: 8px; }
   footer { margin-top: auto; font-size: 12px; color: var(--muted); text-align: center; }
   footer a { color: inherit; }
 </style>
@@ -109,7 +123,23 @@
 
   <button id="refresh" type="button">Refresh</button>
 
-  <p class="tip" id="tip"></p>
+  <details class="settings">
+    <summary>⚙ Settings</summary>
+    <div class="walk">
+      <div class="wr">
+        <span class="wl">Walk to bus stop</span>
+        <button type="button" data-walk="bus" data-step="-1" aria-label="Less walking time to the bus">−</button>
+        <span class="wv" id="walk-bus"></span>
+        <button type="button" data-walk="bus" data-step="1" aria-label="More walking time to the bus">+</button>
+      </div>
+      <div class="wr">
+        <span class="wl">Walk to DLR</span>
+        <button type="button" data-walk="dlr" data-step="-1" aria-label="Less walking time to the DLR">−</button>
+        <span class="wv" id="walk-dlr"></span>
+        <button type="button" data-walk="dlr" data-step="1" aria-label="More walking time to the DLR">+</button>
+      </div>
+    </div>
+  </details>
 
   <footer>Live data from <a href="https://api.tfl.gov.uk/">TfL</a>. Powered by TfL Open Data.</footer>
 
@@ -125,13 +155,24 @@
   const VIA_WEST_SILVERTOWN = /woolwich|king george|city airport|pontoon|west silvertown/i;
   const REFRESH_MS = 20000;
 
-  // Walking minutes from Rise, overridable with ?bus=N&dlr=N.
+  // Walking minutes from Rise. Set with the − / + buttons and remembered on
+  // the phone, so the installed app keeps them. An old ?bus=N&dlr=N link
+  // still works and is saved when opened.
+  const WALK_MAX = 30;
   const params = new URLSearchParams(location.search);
-  const minutes = (key, fallback) => {
-    const n = Number(params.get(key));
-    return params.has(key) && Number.isFinite(n) && n >= 0 ? n : fallback;
-  };
-  const WALK = { bus: minutes('bus', 3) * 60000, dlr: minutes('dlr', 7) * 60000 };
+  const validMins = (v) => (v !== null && v !== '' && Number.isFinite(Number(v)) &&
+    Number(v) >= 0 && Number(v) <= WALK_MAX ? Number(v) : null);
+  function saveMins(key, mins) {
+    try { localStorage.setItem(`walk:${key}`, String(mins)); } catch {}
+  }
+  function loadMins(key, fallback) {
+    const fromUrl = validMins(params.get(key));
+    if (fromUrl !== null) { saveMins(key, fromUrl); return fromUrl; }
+    let stored = null;
+    try { stored = validMins(localStorage.getItem(`walk:${key}`)); } catch {}
+    return stored ?? fallback;
+  }
+  const WALK = { bus: loadMins('bus', 3) * 60000, dlr: loadMins('dlr', 7) * 60000 };
   const RIDE_FALLBACK = { bus: 4 * 60000, dlr: 3 * 60000 };
 
   const $ = (id) => document.getElementById(id);
@@ -268,9 +309,8 @@
       status.textContent = `Updated ${ago(fetchedAt)}`;
     }
 
-    $('tip').textContent =
-      `Allows ${WALK.bus / 60000} min to walk to the Brunel Street bus stop and ${WALK.dlr / 60000} min ` +
-      `to the Canning Town DLR platform. Change with ?bus=N&dlr=N in the address.`;
+    $('walk-bus').textContent = `${WALK.bus / 60000} min`;
+    $('walk-dlr').textContent = `${WALK.dlr / 60000} min`;
   }
 
   function ago(d) {
@@ -279,6 +319,13 @@
   }
 
   $('refresh').addEventListener('click', load);
+  document.querySelectorAll('[data-walk]').forEach((btn) => btn.addEventListener('click', () => {
+    const mode = btn.dataset.walk;
+    const mins = Math.min(WALK_MAX, Math.max(0, WALK[mode] / 60000 + Number(btn.dataset.step)));
+    WALK[mode] = mins * 60000;
+    saveMins(mode, mins);
+    render();
+  }));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') load();
   });

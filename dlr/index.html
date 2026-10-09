@@ -77,11 +77,27 @@
   li .t { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
   li.missed { opacity: .45; }
 
-  .tip { font-size: 13px; color: var(--muted); }
+  .tip { font-size: 13px; color: var(--muted); margin: 0; }
+  .walk {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px 10px 16px;
+  }
+  .walk .wl { flex: 1; font-size: 14px; color: var(--muted); }
+  .walk .wv { min-width: 52px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .walk button { width: 40px; height: 40px; padding: 0; border-radius: 10px; font-size: 20px; line-height: 1; }
   button {
     font: inherit; font-weight: 600; color: var(--text); background: var(--card);
     border: 1px solid var(--border); border-radius: 12px; padding: 12px; width: 100%;
   }
+  .settings summary {
+    list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted);
+    padding: 4px 0; display: flex; align-items: center; gap: 6px;
+  }
+  .settings summary::-webkit-details-marker { display: none; }
+  .settings summary::after { content: '▸'; }
+  .settings[open] summary::after { content: '▾'; }
+  .settings[open] summary { margin-bottom: 8px; }
+  .settings .tip { margin-top: 8px; }
   footer { margin-top: auto; font-size: 12px; color: var(--muted); text-align: center; }
   footer a { color: inherit; }
 </style>
@@ -101,7 +117,16 @@
 
   <button id="refresh" type="button">Refresh</button>
 
-  <p class="tip" id="walkTip"></p>
+  <details class="settings">
+    <summary>⚙ Settings</summary>
+    <div class="walk">
+      <span class="wl">Walk from the Jubilee</span>
+      <button type="button" data-walk="walk" data-step="-1" aria-label="Less walking time">−</button>
+      <span class="wv" id="walkValue"></span>
+      <button type="button" data-walk="walk" data-step="1" aria-label="More walking time">+</button>
+    </div>
+    <p class="tip" id="walkTip"></p>
+  </details>
 
   <footer>Live data from <a href="https://api.tfl.gov.uk/">TfL</a>. Powered by TfL Open Data.</footer>
 
@@ -114,10 +139,26 @@
   const VIA_WEST_SILVERTOWN = /woolwich|king george|city airport|pontoon|west silvertown/i;
   const REFRESH_MS = 20000;
 
-  // ?walk=N  — minutes needed to get from the Jubilee to the DLR platform.
-  // Trains due sooner than that are greyed out and skipped for the big number.
+  // Minutes needed to get from the Jubilee to the DLR platform. Trains due
+  // sooner than that are greyed out and skipped for the big number.
+  // Set with the − / + buttons and remembered on the phone, so the installed
+  // app keeps it. An old ?walk=N link still works and is saved when opened.
+  const WALK_DEFAULT = 2;
+  const WALK_MAX = 30;
   const params = new URLSearchParams(location.search);
-  const walkSecs = Math.max(0, Number(params.get('walk') ?? 2) || 0) * 60;
+  const validMins = (v) => (v !== null && v !== '' && Number.isFinite(Number(v)) &&
+    Number(v) >= 0 && Number(v) <= WALK_MAX ? Number(v) : null);
+  function saveMins(key, mins) {
+    try { localStorage.setItem(`walk:${key}`, String(mins)); } catch {}
+  }
+  function loadMins(key, fallback) {
+    const fromUrl = validMins(params.get(key));
+    if (fromUrl !== null) { saveMins(key, fromUrl); return fromUrl; }
+    let stored = null;
+    try { stored = validMins(localStorage.getItem(`walk:${key}`)); } catch {}
+    return stored ?? fallback;
+  }
+  let walkSecs = loadMins('walk', WALK_DEFAULT) * 60;
 
   const $ = (id) => document.getElementById(id);
   let trains = [];       // [{platform, dest, expected: Date}]
@@ -207,8 +248,9 @@
       status.textContent = `Updated ${ago(fetchedAt)}`;
     }
 
+    $('walkValue').textContent = `${walkSecs / 60} min`;
     $('walkTip').textContent = walkSecs
-      ? `Trains due in under ${walkSecs / 60} min are greyed out as too close to make from the Jubilee. Change with ?walk=N in the address.`
+      ? `Trains due in under ${walkSecs / 60} min are greyed out as too close to make.`
       : '';
   }
 
@@ -218,6 +260,12 @@
   }
 
   $('refresh').addEventListener('click', load);
+  document.querySelectorAll('[data-walk]').forEach((btn) => btn.addEventListener('click', () => {
+    const mins = Math.min(WALK_MAX, Math.max(0, walkSecs / 60 + Number(btn.dataset.step)));
+    walkSecs = mins * 60;
+    saveMins(btn.dataset.walk, mins);
+    render();
+  }));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') load();
   });
