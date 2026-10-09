@@ -7,8 +7,9 @@
 <meta name="description" content="From Rise Climbing to West Silvertown: is the 330 bus or the DLR quicker right now?">
 <meta name="theme-color" content="#00a4a7">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
 <style>
   :root {
     --bg: #f4f6f6;
@@ -285,7 +286,13 @@
   setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
   setInterval(render, 1000);
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  // An earlier version installed an offline service worker, which led Firefox to
+  // drop the home-screen icon. Remove it from phones that still have it.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => regs.forEach((r) => r.unregister()))
+      .catch(() => {});
+  }
   load();
 })();
 </script>
