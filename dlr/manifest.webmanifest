@@ -1,6 +1,6 @@
 {
-  "name": "DLR to West Silvertown",
-  "short_name": "DLR Home",
+  "name": "Silver Lining: DLR to West Silvertown",
+  "short_name": "Silver Lining",
   "description": "Which Canning Town platform for West Silvertown, and when the next DLR is due.",
   "start_url": "./",
   "scope": "./",
