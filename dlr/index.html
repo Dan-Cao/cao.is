@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DLR Home</title>
+<meta name="description" content="Which Canning Town DLR platform to use for West Silvertown, and when the next train is due.">
+<meta name="theme-color" content="#00a4a7">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #f4f6f6;
+    --card: #ffffff;
+    --text: #12201f;
+    --muted: #5d6b6a;
+    --accent: #00a4a7; /* DLR teal */
+    --accent-text: #ffffff;
+    --warn: #b34700;
+    --border: #dde3e3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1414;
+      --card: #172020;
+      --text: #e8efee;
+      --muted: #93a3a2;
+      --accent: #00b5b8;
+      --accent-text: #001a1a;
+      --warn: #ff9a5a;
+      --border: #263231;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 480px;
+    margin: 0 auto;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; color: var(--muted); }
+  #status { font-size: 13px; color: var(--muted); text-align: right; }
+  #status.error { color: var(--warn); }
+
+  .hero {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-radius: 20px;
+    padding: 24px 20px;
+    text-align: center;
+  }
+  .hero .label { font-size: 15px; opacity: .85; }
+  .hero .platform { font-size: 112px; font-weight: 800; line-height: 1; margin: 4px 0; font-variant-numeric: tabular-nums; }
+  .hero .due { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .hero .dest { font-size: 14px; opacity: .85; margin-top: 4px; }
+  .hero.empty .platform { font-size: 40px; padding: 24px 0; }
+
+  ul { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); }
+  li:first-child { border-top: 0; }
+  li .p {
+    flex: none; width: 40px; height: 40px; border-radius: 10px;
+    background: var(--accent); color: var(--accent-text);
+    display: grid; place-items: center; font-weight: 800; font-size: 20px;
+  }
+  li .d { flex: 1; min-width: 0; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  li .t { font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+  li.missed { opacity: .45; }
+
+  .tip { font-size: 13px; color: var(--muted); }
+  button {
+    font: inherit; font-weight: 600; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px; padding: 12px; width: 100%;
+  }
+  footer { margin-top: auto; font-size: 12px; color: var(--muted); text-align: center; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Canning Town → West Silvertown</h1>
+    <div id="status">Loading…</div>
+  </header>
+
+  <section id="hero" class="hero empty" aria-live="polite">
+    <div class="label">Next train</div>
+    <div class="platform">…</div>
+  </section>
+
+  <ul id="list" hidden></ul>
+
+  <button id="refresh" type="button">Refresh</button>
+
+  <p class="tip" id="walkTip"></p>
+
+  <footer>Live data from <a href="https://api.tfl.gov.uk/">TfL</a>. Powered by TfL Open Data.</footer>
+
+<script>
+(() => {
+  const STOP = '940GZZDLCGT'; // Canning Town DLR
+  const API = `https://api.tfl.gov.uk/StopPoint/${STOP}/Arrivals`;
+  // Trains from Canning Town that call at West Silvertown run on the
+  // Woolwich Arsenal branch. Short workings may terminate earlier on it.
+  const VIA_WEST_SILVERTOWN = /woolwich|king george|city airport|pontoon|west silvertown/i;
+  const REFRESH_MS = 20000;
+
+  // ?walk=N  — minutes needed to get from the Jubilee to the DLR platform.
+  // Trains due sooner than that are greyed out and skipped for the big number.
+  const params = new URLSearchParams(location.search);
+  const walkSecs = Math.max(0, Number(params.get('walk') ?? 2) || 0) * 60;
+
+  const $ = (id) => document.getElementById(id);
+  let trains = [];       // [{platform, dest, expected: Date}]
+  let fetchedAt = null;
+  let lastError = null;
+  let inflight = false;
+
+  function platformNumber(name) {
+    const m = /(\d+)/.exec(name || '');
+    return m ? m[1] : '?';
+  }
+
+  function cleanDest(name) {
+    return (name || '').replace(/\s*DLR Station$/i, '');
+  }
+
+  async function load() {
+    if (inflight) return;
+    inflight = true;
+    $('status').textContent = 'Updating…';
+    try {
+      const res = await fetch(API, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`TfL returned ${res.status}`);
+      const data = await res.json();
+      trains = data
+        .filter((a) => VIA_WEST_SILVERTOWN.test(a.destinationName || '') &&
+                       (a.direction || 'outbound') === 'outbound')
+        .map((a) => ({
+          platform: platformNumber(a.platformName),
+          dest: cleanDest(a.destinationName),
+          expected: new Date(a.expectedArrival),
+        }))
+        .sort((a, b) => a.expected - b.expected);
+      fetchedAt = new Date();
+      lastError = null;
+    } catch (e) {
+      lastError = e;
+    } finally {
+      inflight = false;
+      render();
+    }
+  }
+
+  function fmtDue(secs) {
+    if (secs < 30) return 'Due';
+    const mins = Math.round(secs / 60);
+    return mins <= 1 ? '1 min' : `${mins} mins`;
+  }
+
+  function render() {
+    const now = Date.now();
+    const upcoming = trains
+      .map((t) => ({ ...t, secs: (t.expected - now) / 1000 }))
+      .filter((t) => t.secs > -20);
+
+    const hero = $('hero');
+    const catchable = upcoming.find((t) => t.secs >= walkSecs) || upcoming[0];
+
+    if (catchable) {
+      hero.classList.remove('empty');
+      hero.innerHTML = `
+        <div class="label">Go to platform</div>
+        <div class="platform">${catchable.platform}</div>
+        <div class="due">${fmtDue(catchable.secs)}</div>
+        <div class="dest">to ${catchable.dest}</div>`;
+    } else if (fetchedAt) {
+      hero.classList.add('empty');
+      hero.innerHTML = `<div class="label">Next train</div><div class="platform">No trains listed</div>`;
+    }
+
+    const list = $('list');
+    const rest = upcoming.filter((t) => t !== catchable);
+    list.hidden = rest.length === 0;
+    list.innerHTML = rest.map((t) => `
+      <li class="${t.secs < walkSecs ? 'missed' : ''}">
+        <span class="p">${t.platform}</span>
+        <span class="d">${t.dest}</span>
+        <span class="t">${fmtDue(t.secs)}</span>
+      </li>`).join('');
+
+    const status = $('status');
+    if (lastError) {
+      status.classList.add('error');
+      status.textContent = fetchedAt ? `Offline · data ${ago(fetchedAt)}` : 'Couldn’t reach TfL';
+    } else if (fetchedAt && !inflight) {
+      status.classList.remove('error');
+      status.textContent = `Updated ${ago(fetchedAt)}`;
+    }
+
+    $('walkTip').textContent = walkSecs
+      ? `Trains due in under ${walkSecs / 60} min are greyed out as too close to make from the Jubilee. Change with ?walk=N in the address.`
+      : '';
+  }
+
+  function ago(d) {
+    const s = Math.round((Date.now() - d) / 1000);
+    return s < 5 ? 'just now' : s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
+  }
+
+  $('refresh').addEventListener('click', load);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') load();
+  });
+  setInterval(() => { if (document.visibilityState === 'visible') load(); }, REFRESH_MS);
+  setInterval(render, 1000);
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  load();
+})();
+</script>
+</body>
+</html>
