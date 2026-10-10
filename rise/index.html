@@ -9,6 +9,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-peaks-192.png">
 <link rel="apple-touch-icon" href="icon-peaks-192.png">
+<script>
+  // Apply the saved theme before the page draws, so it doesn't flash.
+  try { const t = localStorage.getItem('theme:rise'); if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
 <style>
   :root {
     --bg: #f4f6f6;
@@ -32,6 +36,89 @@
       --on-colour: #10100f;
       --warn: #ff9a5a;
       --border: #263231;
+    }
+  }
+  /* Warm themes, picked in Settings. Classic is the default above. */
+  :root[data-theme="oat"] {
+    --bg: #f6efe6;
+    --card: #fffaf3;
+    --text: #3a2e26;
+    --muted: #86725f;
+    --dlr: #2a9d9a;
+    --bus: #d4483f;
+    --on-colour: #fffaf3;
+    --border: #eadfce;
+  }
+  :root[data-theme="peach"] {
+    --bg: #fcece4;
+    --card: #fff8f3;
+    --text: #3d2a2a;
+    --muted: #96706b;
+    --dlr: #2a9d9a;
+    --bus: #d9473f;
+    --on-colour: #fff8f3;
+    --border: #f2d8cd;
+  }
+  :root[data-theme="lavender"] {
+    --bg: #f2edf8;
+    --card: #fcfaff;
+    --text: #2e2640;
+    --muted: #7a6f8e;
+    --dlr: #2a9d9a;
+    --bus: #d4483f;
+    --on-colour: #fcfaff;
+    --border: #e1d9ee;
+  }
+  :root[data-theme="candle"] {
+    --bg: #faf2df;
+    --card: #fffaed;
+    --text: #3b3022;
+    --muted: #86745a;
+    --dlr: #2a9d9a;
+    --bus: #d14a3a;
+    --on-colour: #fffaed;
+    --border: #eee0c2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="oat"] {
+      --bg: #221b16;
+      --card: #2e2520;
+      --text: #f3e9dd;
+      --muted: #b5a28f;
+      --dlr: #3b9e9a;
+      --bus: #cf5a4f;
+      --on-colour: #fff8f0;
+      --border: #3d322b;
+    }
+    :root[data-theme="peach"] {
+      --bg: #281d21;
+      --card: #35272c;
+      --text: #f7e6e2;
+      --muted: #bf9f9c;
+      --dlr: #3b9e9a;
+      --bus: #d65c55;
+      --on-colour: #fff6f2;
+      --border: #46333a;
+    }
+    :root[data-theme="lavender"] {
+      --bg: #1e1a2a;
+      --card: #29243a;
+      --text: #ece6f7;
+      --muted: #a79dbd;
+      --dlr: #3b9e9a;
+      --bus: #cf5a52;
+      --on-colour: #fbf8ff;
+      --border: #383150;
+    }
+    :root[data-theme="candle"] {
+      --bg: #1d1913;
+      --card: #29231a;
+      --text: #f2e7d0;
+      --muted: #b3a17d;
+      --dlr: #3b9e9a;
+      --bus: #cc5a45;
+      --on-colour: #fff7e8;
+      --border: #3a3125;
     }
   }
   * { box-sizing: border-box; }
@@ -102,6 +189,16 @@
   .settings[open] summary::after { content: '▾'; }
   .settings[open] summary { margin-bottom: 8px; }
   .settings .tip { margin-top: 8px; }
+  .themes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 12px; }
+  .settings .theme {
+    padding: 8px 2px; border-radius: 12px; font-size: 11px; color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+  .theme .sw {
+    width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border);
+    background: linear-gradient(135deg, var(--day) 50%, var(--night) 50%);
+  }
+  .theme[aria-checked="true"] { border-color: var(--text); color: var(--text); }
   footer { margin-top: auto; font-size: 12px; color: var(--muted); text-align: center; }
   footer a { color: inherit; }
 </style>
@@ -125,6 +222,13 @@
 
   <details class="settings">
     <summary>⚙ Settings</summary>
+    <div class="themes" role="radiogroup" aria-label="Theme">
+      <button type="button" class="theme" role="radio" data-theme-pick="classic"><span class="sw" style="--day:#f4f6f6;--night:#0e1414"></span>Classic</button>
+      <button type="button" class="theme" role="radio" data-theme-pick="oat"><span class="sw" style="--day:#f6efe6;--night:#221b16"></span>Oat</button>
+      <button type="button" class="theme" role="radio" data-theme-pick="peach"><span class="sw" style="--day:#fcece4;--night:#281d21"></span>Peach</button>
+      <button type="button" class="theme" role="radio" data-theme-pick="lavender"><span class="sw" style="--day:#f2edf8;--night:#1e1a2a"></span>Lavender</button>
+      <button type="button" class="theme" role="radio" data-theme-pick="candle"><span class="sw" style="--day:#faf2df;--night:#1d1913"></span>Candle</button>
+    </div>
     <div class="walk">
       <div class="wr">
         <span class="wl">Walk to bus stop</span>
@@ -317,6 +421,22 @@
     const s = Math.round((Date.now() - d) / 1000);
     return s < 5 ? 'just now' : s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
   }
+
+  // Theme picker in Settings, remembered on the phone like the walk times.
+  const THEME_KEY = 'theme:rise';
+  const themeButtons = document.querySelectorAll('[data-theme-pick]');
+  function showTheme() {
+    const current = document.documentElement.dataset.theme || 'classic';
+    themeButtons.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.themePick === current)));
+  }
+  themeButtons.forEach((btn) => btn.addEventListener('click', () => {
+    const pick = btn.dataset.themePick;
+    if (pick === 'classic') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = pick;
+    try { localStorage.setItem(THEME_KEY, pick); } catch {}
+    showTheme();
+  }));
+  showTheme();
 
   $('refresh').addEventListener('click', load);
   document.querySelectorAll('[data-walk]').forEach((btn) => btn.addEventListener('click', () => {
