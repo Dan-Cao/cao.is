@@ -161,10 +161,9 @@
   li.missed { opacity: .45; }
 
   .tip { font-size: 13px; color: var(--muted); margin: 0; }
-  .walk {
-    display: flex; align-items: center; gap: 12px;
-    background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px 10px 16px;
-  }
+  .walk { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .walk .wr { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; }
+  .walk .wr + .wr { border-top: 1px solid var(--border); }
   .walk .wl { flex: 1; font-size: 14px; color: var(--muted); }
   .walk .wv { min-width: 52px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
   .walk button { width: 40px; height: 40px; padding: 0; border-radius: 10px; font-size: 20px; line-height: 1; }
@@ -220,10 +219,18 @@
       <button type="button" class="theme" role="radio" data-theme-pick="candle"><span class="sw" style="--day:#faf2df;--night:#1d1913"></span>Candle</button>
     </div>
     <div class="walk">
-      <span class="wl">Walk from the Jubilee</span>
-      <button type="button" data-walk="walk" data-step="-1" aria-label="Less walking time">−</button>
-      <span class="wv" id="walkValue"></span>
-      <button type="button" data-walk="walk" data-step="1" aria-label="More walking time">+</button>
+      <div class="wr">
+        <span class="wl">Walk to platform 1</span>
+        <button type="button" data-walk="1" data-step="-1" aria-label="Less walking time to platform 1">−</button>
+        <span class="wv" id="walk-1"></span>
+        <button type="button" data-walk="1" data-step="1" aria-label="More walking time to platform 1">+</button>
+      </div>
+      <div class="wr">
+        <span class="wl">Walk to platform 3</span>
+        <button type="button" data-walk="3" data-step="-1" aria-label="Less walking time to platform 3">−</button>
+        <span class="wv" id="walk-3"></span>
+        <button type="button" data-walk="3" data-step="1" aria-label="More walking time to platform 3">+</button>
+      </div>
     </div>
     <p class="tip" id="walkTip"></p>
   </details>
@@ -239,11 +246,12 @@
   const VIA_WEST_SILVERTOWN = /woolwich|king george|city airport|pontoon|west silvertown/i;
   const REFRESH_MS = 20000;
 
-  // Minutes needed to get from the Jubilee to the DLR platform. A next train
-  // due sooner than that is still shown on the big card, marked as a close
-  // call; later trains due sooner than that are greyed out in the list.
+  // Minutes needed to get from the Jubilee to each DLR platform. A next train
+  // due sooner than the walk to its platform is still shown on the big card,
+  // marked as a close call; later trains like that are greyed out in the list.
   // Set with the − / + buttons and remembered on the phone, so the installed
-  // app keeps it. An old ?walk=N link still works and is saved when opened.
+  // app keeps them. ?p1=N&p3=N links work and are saved when opened; an older
+  // single walk time (?walk=N, or saved before) seeds both platforms.
   const WALK_DEFAULT = 2;
   const WALK_MAX = 30;
   const params = new URLSearchParams(location.search);
@@ -259,7 +267,16 @@
     try { stored = validMins(localStorage.getItem(`walk:${key}`)); } catch {}
     return stored ?? fallback;
   }
-  let walkSecs = loadMins('walk', WALK_DEFAULT) * 60;
+  const PLATFORMS = ['1', '3']; // Woolwich-branch platforms at Canning Town
+  const legacyWalk = validMins(params.get('walk'));
+  const baseMins = loadMins('walk', WALK_DEFAULT);
+  const walk = {}; // platform -> seconds
+  for (const p of PLATFORMS) {
+    if (legacyWalk !== null) saveMins(`p${p}`, legacyWalk);
+    walk[p] = loadMins(`p${p}`, baseMins) * 60;
+  }
+  // A train on an unexpected platform gets the longest walk, to be safe.
+  const walkFor = (platform) => walk[platform] ?? Math.max(...Object.values(walk));
 
   const $ = (id) => document.getElementById(id);
   let trains = [];       // [{platform, dest, expected: Date}]
@@ -321,7 +338,7 @@
     if (next) {
       // If the next train is due sooner than the walk, it may still be
       // makeable, so keep it on the card but flag it.
-      const close = next.secs < walkSecs;
+      const close = next.secs < walkFor(next.platform);
       hero.classList.remove('empty');
       hero.innerHTML = `
         ${close ? '<div class="close">Close call · hurry!</div>' : ''}
@@ -337,7 +354,7 @@
     const list = $('list');
     list.hidden = rest.length === 0;
     list.innerHTML = rest.map((t) => `
-      <li class="${t.secs < walkSecs ? 'missed' : ''}">
+      <li class="${t.secs < walkFor(t.platform) ? 'missed' : ''}">
         <span class="p">${t.platform}</span>
         <span class="d">${t.dest}</span>
         <span class="t">${fmtDue(t.secs)}</span>
@@ -352,10 +369,8 @@
       status.textContent = `Updated ${ago(fetchedAt)}`;
     }
 
-    $('walkValue').textContent = `${walkSecs / 60} min`;
-    $('walkTip').textContent = walkSecs
-      ? `Trains due in under ${walkSecs / 60} min are flagged as a close call.`
-      : '';
+    for (const p of PLATFORMS) $(`walk-${p}`).textContent = `${walk[p] / 60} min`;
+    $('walkTip').textContent = 'Trains due sooner than the walk to their platform are flagged as a close call.';
   }
 
   function ago(d) {
@@ -381,9 +396,10 @@
 
   $('refresh').addEventListener('click', load);
   document.querySelectorAll('[data-walk]').forEach((btn) => btn.addEventListener('click', () => {
-    const mins = Math.min(WALK_MAX, Math.max(0, walkSecs / 60 + Number(btn.dataset.step)));
-    walkSecs = mins * 60;
-    saveMins(btn.dataset.walk, mins);
+    const p = btn.dataset.walk;
+    const mins = Math.min(WALK_MAX, Math.max(0, walk[p] / 60 + Number(btn.dataset.step)));
+    walk[p] = mins * 60;
+    saveMins(`p${p}`, mins);
     render();
   }));
   document.addEventListener('visibilitychange', () => {
