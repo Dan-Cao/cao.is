@@ -143,6 +143,10 @@
   .hero .due { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .hero .dest { font-size: 14px; opacity: .85; margin-top: 4px; }
   .hero.empty .platform { font-size: 40px; padding: 24px 0; }
+  .hero .close {
+    display: inline-block; margin-bottom: 6px; padding: 4px 12px; border-radius: 999px;
+    background: var(--accent-text); color: var(--accent); font-size: 14px; font-weight: 700;
+  }
 
   ul { list-style: none; margin: 0; padding: 0; background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
   li { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); }
@@ -235,8 +239,9 @@
   const VIA_WEST_SILVERTOWN = /woolwich|king george|city airport|pontoon|west silvertown/i;
   const REFRESH_MS = 20000;
 
-  // Minutes needed to get from the Jubilee to the DLR platform. Trains due
-  // sooner than that are greyed out and skipped for the big number.
+  // Minutes needed to get from the Jubilee to the DLR platform. A next train
+  // due sooner than that is still shown on the big card, marked as a close
+  // call; later trains due sooner than that are greyed out in the list.
   // Set with the − / + buttons and remembered on the phone, so the installed
   // app keeps it. An old ?walk=N link still works and is saved when opened.
   const WALK_DEFAULT = 2;
@@ -311,22 +316,25 @@
       .filter((t) => t.secs > -20);
 
     const hero = $('hero');
-    const catchable = upcoming.find((t) => t.secs >= walkSecs) || upcoming[0];
+    const [next, ...rest] = upcoming;
 
-    if (catchable) {
+    if (next) {
+      // If the next train is due sooner than the walk, it may still be
+      // makeable, so keep it on the card but flag it.
+      const close = next.secs < walkSecs;
       hero.classList.remove('empty');
       hero.innerHTML = `
+        ${close ? '<div class="close">Close call · hurry!</div>' : ''}
         <div class="label">Go to platform</div>
-        <div class="platform">${catchable.platform}</div>
-        <div class="due">${fmtDue(catchable.secs)}</div>
-        <div class="dest">to ${catchable.dest}</div>`;
+        <div class="platform">${next.platform}</div>
+        <div class="due">${fmtDue(next.secs)}</div>
+        <div class="dest">to ${next.dest}</div>`;
     } else if (fetchedAt) {
       hero.classList.add('empty');
       hero.innerHTML = `<div class="label">Next train</div><div class="platform">No trains listed</div>`;
     }
 
     const list = $('list');
-    const rest = upcoming.filter((t) => t !== catchable);
     list.hidden = rest.length === 0;
     list.innerHTML = rest.map((t) => `
       <li class="${t.secs < walkSecs ? 'missed' : ''}">
@@ -346,7 +354,7 @@
 
     $('walkValue').textContent = `${walkSecs / 60} min`;
     $('walkTip').textContent = walkSecs
-      ? `Trains due in under ${walkSecs / 60} min are greyed out as too close to make.`
+      ? `Trains due in under ${walkSecs / 60} min are flagged as a close call.`
       : '';
   }
 
