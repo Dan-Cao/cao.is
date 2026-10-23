@@ -190,6 +190,12 @@
     background: linear-gradient(135deg, var(--day) 50%, var(--night) 50%);
   }
   .theme[aria-checked="true"] { border-color: var(--text); color: var(--text); }
+  .alerts { display: flex; flex-direction: column; gap: 8px; }
+  .alert {
+    background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--warn);
+    border-radius: 14px; padding: 10px 14px; font-size: 14px;
+  }
+  .alert strong { display: block; color: var(--warn); margin-bottom: 2px; }
   footer { margin-top: auto; font-size: 12px; color: var(--muted); text-align: center; }
   footer a { color: inherit; }
 </style>
@@ -199,6 +205,8 @@
     <h1>Canning Town → West Silvertown</h1>
     <div id="status">Loading…</div>
   </header>
+
+  <section id="alerts" class="alerts" aria-live="polite" hidden></section>
 
   <section id="hero" class="hero empty" aria-live="polite">
     <div class="label">Next train</div>
@@ -293,9 +301,48 @@
     return (name || '').replace(/\s*DLR Station$/i, '');
   }
 
+  // Delay and disruption alerts from TfL's line status. Live predictions
+  // already reflect slow running, but during disruption they can be
+  // optimistic, so show TfL's message whenever a line isn't running normally.
+  const ALERT_LINES = { 'dlr': 'DLR' };
+  const GOOD_SERVICE = 10;
+  async function loadAlerts() {
+    let alerts = [];
+    try {
+      const res = await fetch('https://api.tfl.gov.uk/Line/dlr/Status', { cache: 'no-store' });
+      if (!res.ok) return; // keep showing the last alerts we had
+      for (const line of await res.json()) {
+        const seen = new Set();
+        for (const s of line.lineStatuses || []) {
+          if (s.statusSeverity === GOOD_SERVICE) continue;
+          // Drop the "Docklands Light Railway: " style prefix from the reason.
+          const reason = (s.reason || '').replace(/^[^:]{1,40}:\s*/, '').trim();
+          const key = s.statusSeverityDescription + reason;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          alerts.push({ title: `${ALERT_LINES[line.id] || line.name} · ${s.statusSeverityDescription}`, reason });
+        }
+      }
+    } catch {
+      return;
+    }
+    const box = $('alerts');
+    box.replaceChildren(...alerts.map((a) => {
+      const el = document.createElement('div');
+      el.className = 'alert';
+      const title = document.createElement('strong');
+      title.textContent = `⚠ ${a.title}`;
+      el.append(title);
+      if (a.reason) el.append(a.reason);
+      return el;
+    }));
+    box.hidden = alerts.length === 0;
+  }
+
   async function load() {
     if (inflight) return;
     inflight = true;
+    loadAlerts();
     $('status').textContent = 'Updating…';
     try {
       const res = await fetch(API, { cache: 'no-store' });
